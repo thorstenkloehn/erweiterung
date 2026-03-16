@@ -50,6 +50,50 @@ function activate(context) {
     const treeDataProvider = new CourseTreeDataProvider(coursesPath);
     const treeView = vscode.window.createTreeView('codekurs-explorer', { treeDataProvider });
     let currentPanel;
+    let currentDocUri;
+    const getExtensionForLanguage = (lang) => {
+        const map = {
+            'python': '.py',
+            'javascript': '.js',
+            'typescript': '.ts',
+            'rust': '.rs',
+            'c': '.c',
+            'cpp': '.cpp',
+            'csharp': '.cs',
+            'java': '.java'
+        };
+        return map[lang] || '.txt';
+    };
+    const closeAllExerciseTabs = async () => {
+        if (currentPanel) {
+            currentPanel.dispose();
+            currentPanel = undefined;
+        }
+        const allTabs = vscode.window.tabGroups.all.flatMap(group => group.tabs);
+        for (const tab of allTabs) {
+            if (tab.input instanceof vscode.TabInputText || tab.input instanceof vscode.TabInputWebview) {
+                const uri = tab.input.uri;
+                const viewType = tab.input.viewType;
+                if (viewType === 'mainThreadWebview-lessonContent' || viewType === 'lessonContent') {
+                    await vscode.window.tabGroups.close(tab);
+                    continue;
+                }
+                if (uri) {
+                    const isScratchFile = uri.fsPath && uri.fsPath.includes('.scratch_');
+                    const isInLernenDir = uri.fsPath && uri.fsPath.includes('/lernen/');
+                    if (isScratchFile || isInLernenDir) {
+                        // Falls dirty, lautlos speichern um Dialog zu vermeiden
+                        const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
+                        if (doc && doc.isDirty) {
+                            await doc.save();
+                        }
+                        await vscode.window.tabGroups.close(tab);
+                    }
+                }
+            }
+        }
+        currentDocUri = undefined;
+    };
     const refreshCoursesCommand = vscode.commands.registerCommand('codekurs.refreshCourses', () => {
         treeDataProvider.refresh();
         vscode.window.showInformationMessage('Kursliste aktualisiert!');
@@ -109,13 +153,21 @@ solution: |
             vscode.window.showErrorMessage('Fehler: Lektion konnte nicht geladen werden.');
             return;
         }
+        await closeAllExerciseTabs();
         const lang = getLanguage(lesson);
         const commentChar = lang === 'rust' ? '//' : '#';
+        const ext = getExtensionForLanguage(lang);
+        // Temporäre Scratch-Datei im Extension-Verzeichnis erstellen
+        const scratchDir = path.join(context.extensionPath, '.scratch');
+        if (!fs.existsSync(scratchDir)) {
+            fs.mkdirSync(scratchDir, { recursive: true });
+        }
+        const scratchPath = path.join(scratchDir, `.scratch_uebung${ext}`);
         let content = lesson.template || `${commentChar} Schreibe hier deinen Code für: ${lesson.metadata.title}\n\n`;
-        const doc = await vscode.workspace.openTextDocument({
-            language: lang,
-            content: content
-        });
+        // Datei physisch schreiben
+        fs.writeFileSync(scratchPath, content, 'utf8');
+        const doc = await vscode.workspace.openTextDocument(scratchPath);
+        currentDocUri = doc.uri;
         await vscode.window.showTextDocument(doc, vscode.ViewColumn.Two);
         const panel = vscode.window.createWebviewPanel('lessonContent', lesson.metadata.title, vscode.ViewColumn.One, { enableScripts: true });
         currentPanel = panel;
@@ -253,11 +305,8 @@ solution: |
             vscode.window.showInformationMessage('✅ Richtig! Gut gemacht! Springe zur nächsten Aufgabe...');
             // 1. Nächste Lektion suchen
             const nextLesson = findNextLesson(lesson);
-            // 2. Aktuelle Tabs schließen
-            if (currentPanel) {
-                currentPanel.dispose();
-            }
-            await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+            // 2. Alle Übungsfenster schließen
+            await closeAllExerciseTabs();
             // 3. Nächste Lektion öffnen (falls vorhanden)
             if (nextLesson) {
                 vscode.commands.executeCommand('codekurs.openLesson', nextLesson);
