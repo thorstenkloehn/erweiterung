@@ -157,13 +157,18 @@ solution: |
 
         const doc = await vscode.workspace.openTextDocument(scratchPath);
         currentDocUri = doc.uri;
-        await vscode.window.showTextDocument(doc, vscode.ViewColumn.Two);
+        // Editor in die Mitte (Spalte 1)
+        await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
 
+        // Webview nach rechts (Spalte 2)
         const panel = vscode.window.createWebviewPanel(
             'lessonContent',
             lesson.metadata.title,
-            vscode.ViewColumn.One,
-            { enableScripts: true }
+            vscode.ViewColumn.Two,
+            { 
+                enableScripts: true,
+                retainContextWhenHidden: true
+            }
         );
         currentPanel = panel;
 
@@ -175,53 +180,189 @@ solution: |
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>${lesson.metadata.title}</title>
                 <style>
+                    :root {
+                        --padding: 16px;
+                    }
                     body {
                         font-family: var(--vscode-font-family);
                         color: var(--vscode-editor-foreground);
                         background-color: var(--vscode-editor-background);
-                        padding: 20px;
-                        line-height: 1.6;
+                        padding: 0;
+                        margin: 0;
+                        line-height: 1.5;
+                        display: flex;
+                        flex-direction: column;
+                        height: 100vh;
+                        overflow: hidden;
                     }
-                    h1 { color: var(--vscode-editor-title-foreground); }
+                    
+                    /* Header Bereich */
+                    .header {
+                        padding: var(--padding);
+                        border-bottom: 1px solid var(--vscode-panel-border);
+                        flex-shrink: 0;
+                    }
+                    .type-label {
+                        font-size: 11px;
+                        text-transform: uppercase;
+                        color: var(--vscode-descriptionForeground);
+                        margin-bottom: 4px;
+                        letter-spacing: 0.5px;
+                    }
+                    .steps {
+                        display: flex;
+                        gap: 4px;
+                        margin-top: 12px;
+                    }
+                    .step {
+                        width: 24px;
+                        height: 24px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        border: 1px solid var(--vscode-panel-border);
+                        font-size: 12px;
+                        border-radius: 2px;
+                        color: var(--vscode-descriptionForeground);
+                    }
+                    .step.active {
+                        background-color: var(--vscode-button-background);
+                        color: var(--vscode-button-foreground);
+                        border-color: var(--vscode-button-background);
+                    }
+                    
+                    /* Tabs */
+                    .tabs {
+                        display: flex;
+                        padding: 0 var(--padding);
+                        border-bottom: 1px solid var(--vscode-panel-border);
+                        background-color: var(--vscode-editor-background);
+                        flex-shrink: 0;
+                    }
+                    .tab {
+                        padding: 8px 16px;
+                        cursor: pointer;
+                        font-size: 13px;
+                        color: var(--vscode-descriptionForeground);
+                        border-bottom: 2px solid transparent;
+                    }
+                    .tab.active {
+                        color: var(--vscode-foreground);
+                        border-bottom-color: var(--vscode-button-background);
+                    }
+                    
+                    /* Content Bereich */
+                    .content-wrapper {
+                        flex-grow: 1;
+                        overflow-y: auto;
+                        padding: var(--padding);
+                    }
+                    h1 { 
+                        font-size: 20px;
+                        font-weight: 500;
+                        margin-top: 0;
+                        color: var(--vscode-foreground); 
+                    }
+                    p, li {
+                        font-size: 14px;
+                    }
                     pre {
                         background-color: var(--vscode-textBlockQuote-background);
-                        padding: 10px;
-                        border-radius: 5px;
+                        padding: 12px;
+                        border-radius: 4px;
                         overflow-x: auto;
+                        font-family: var(--vscode-editor-font-family);
                     }
                     code {
                         font-family: var(--vscode-editor-font-family);
+                        background-color: rgba(128, 128, 128, 0.1);
+                        padding: 2px 4px;
+                        border-radius: 3px;
+                    }
+                    pre code {
+                        background-color: transparent;
+                        padding: 0;
+                    }
+                    
+                    /* Footer / Actions */
+                    .footer {
+                        padding: var(--padding);
+                        border-top: 1px solid var(--vscode-panel-border);
+                        display: flex;
+                        gap: 12px;
+                        background-color: var(--vscode-editor-background);
+                        flex-shrink: 0;
                     }
                     button {
                         background-color: var(--vscode-button-background);
                         color: var(--vscode-button-foreground);
                         border: none;
-                        padding: 10px 20px;
+                        padding: 6px 16px;
                         cursor: pointer;
-                        font-size: 16px;
-                        margin-top: 20px;
+                        font-size: 13px;
                         border-radius: 2px;
                     }
                     button:hover {
                         background-color: var(--vscode-button-hoverBackground);
                     }
+                    button.secondary {
+                        background-color: transparent;
+                        color: var(--vscode-button-background);
+                        border: 1px solid var(--vscode-button-background);
+                    }
+                    
                     #solution-box {
                         display: none;
                         background-color: var(--vscode-textBlockQuote-background);
                         border-left: 4px solid var(--vscode-button-background);
-                        padding: 10px;
-                        margin-top: 20px;
+                        padding: 12px;
+                        margin-top: 16px;
+                    }
+
+                    .hint-toggle {
+                        color: var(--vscode-textLink-foreground);
+                        cursor: pointer;
+                        font-size: 13px;
+                        display: flex;
+                        align-items: center;
+                        gap: 4px;
+                        margin-top: 16px;
                     }
                 </style>
             </head>
             <body>
-                ${lesson.content}
-                <button onclick="check()">Aufgabe prüfen</button>
-                <button onclick="toggleSolution()" style="background-color: var(--vscode-textSeparator-foreground); margin-left: 10px;">Lösung anzeigen</button>
-                
-                <div id="solution-box">
-                    <strong>Lösung:</strong>
-                    <pre><code>${lesson.solution ? lesson.solution.replace(/</g, "&lt;").replace(/>/g, "&gt;") : "Keine Lösung hinterlegt."}</code></pre>
+                <div class="header">
+                    <div class="type-label">${lesson.metadata.type === 'project' ? 'Project' : 'Task'}</div>
+                    <div class="steps">
+                        <div class="step active">1</div>
+                        <div class="step">2</div>
+                        <div class="step">3</div>
+                        <div class="step">4</div>
+                    </div>
+                </div>
+
+                <div class="tabs">
+                    <div class="tab active">Description</div>
+                    <div class="tab">Submissions</div>
+                </div>
+
+                <div class="content-wrapper">
+                    <h1>${lesson.metadata.title}</h1>
+                    ${lesson.content}
+                    
+                    <div class="hint-toggle" onclick="toggleSolution()">
+                        <span>💡</span> Hint
+                    </div>
+
+                    <div id="solution-box">
+                        <strong>Lösungsvorschlag:</strong>
+                        <pre><code>${lesson.solution ? lesson.solution.replace(/</g, "&lt;").replace(/>/g, "&gt;") : "Keine Lösung hinterlegt."}</code></pre>
+                    </div>
+                </div>
+
+                <div class="footer">
+                    <button onclick="check()">Check</button>
+                    <!-- <button class="secondary" onclick="toggleSolution()">Solution</button> -->
                 </div>
 
                 <script>
