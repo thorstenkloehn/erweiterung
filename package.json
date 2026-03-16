@@ -42,6 +42,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "codekurs.createExercise",
+        "title": "Eigene Übung erstellen",
+        "icon": "$(add)"
+      },
+      {
         "command": "codekurs.openLesson",
         "title": "Lektion lesen"
       }
@@ -57,6 +62,11 @@
       "view/title": [
         {
           "command": "codekurs.refreshCourses",
+          "group": "navigation",
+          "when": "view == codekurs-explorer"
+        },
+        {
+          "command": "codekurs.createExercise",
           "group": "navigation",
           "when": "view == codekurs-explorer"
         }

@@ -8,14 +8,10 @@ Lernerweiterung ist eine Visual Studio Code Lernplattform, die es ermöglicht, P
 - **Validierung:** Lokale Ausführung von Code über System-Compiler/Interpreter.
 
 ## Verzeichnisstruktur `lernen/`
-Die Kurse sind nach Programmiersprachen organisiert:
-- `C/`: Grundlagen C
-- `Cpp/`: Grundlagen C++ (neu hinzugefügt)
-- `CSharp/`: Grundlagen C#
-- `Java/`: Grundlagen Java (neu hinzugefügt)
-- `Javascript/`: Grundlagen JavaScript
-- `Python/`: Grundlagen Python (zuvor Programmiersprachen)
-- `Rust/`: Grundlagen Rust
+Die Kurse sind nach Programmiersprachen und Formaten organisiert:
+- `C/`, `Cpp/`, `CSharp/`, `Java/`, `Javascript/`, `Python/`, `Rust/`: Grundkurse
+- `Projekte/`: Mehrstufige, praxisorientierte Projekte (neu)
+- `Challenges/`: Knifflige Programmier-Herausforderungen (neu)
 - `Übung/`: Allgemeine Übungsaufgaben
 
 ## Technische Details

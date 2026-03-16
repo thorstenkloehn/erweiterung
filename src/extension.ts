@@ -19,9 +19,57 @@ export function activate(context: vscode.ExtensionContext) {
     const treeDataProvider = new CourseTreeDataProvider(coursesPath);
     const treeView = vscode.window.createTreeView('codekurs-explorer', { treeDataProvider });
 
+    let currentPanel: vscode.WebviewPanel | undefined;
+
     const refreshCoursesCommand = vscode.commands.registerCommand('codekurs.refreshCourses', () => {
         treeDataProvider.refresh();
         vscode.window.showInformationMessage('Kursliste aktualisiert!');
+    });
+
+    const createExerciseCommand = vscode.commands.registerCommand('codekurs.createExercise', async () => {
+        const title = await vscode.window.showInputBox({
+            prompt: 'Titel für die neue Übung eingeben',
+            placeHolder: 'z.B. Mein Python-Skript'
+        });
+
+        if (!title) return;
+
+        const fileName = title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '.md';
+        const exerciseDir = path.join(coursesPath, 'Übung');
+        
+        if (!fs.existsSync(exerciseDir)) {
+            fs.mkdirSync(exerciseDir, { recursive: true });
+        }
+
+        const filePath = path.join(exerciseDir, fileName);
+
+        if (fs.existsSync(filePath)) {
+            vscode.window.showErrorMessage('Eine Übung mit diesem Namen existiert bereits.');
+            return;
+        }
+
+        const template = `---
+title: "${title}"
+description: "Eigene Übung: ${title}"
+order: 100
+type: "lesson"
+---
+# ${title}
+
+Beschreibe hier deine Aufgabe.
+
+---
+solution: |
+  # Deine Lösung hier
+---
+`;
+
+        fs.writeFileSync(filePath, template, 'utf8');
+        const doc = await vscode.workspace.openTextDocument(filePath);
+        await vscode.window.showTextDocument(doc);
+        
+        treeDataProvider.refresh();
+        vscode.window.showInformationMessage(`Übung "${title}" wurde erstellt.`);
     });
 
     const getLanguage = (lesson: Lesson): string => {
@@ -56,6 +104,7 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.ViewColumn.One,
             { enableScripts: true }
         );
+        currentPanel = panel;
 
         panel.webview.html = `
             <!DOCTYPE html>
@@ -137,8 +186,26 @@ export function activate(context: vscode.ExtensionContext) {
                 vscode.commands.executeCommand('codekurs.checkCode', lesson);
             }
         });
+
+        panel.onDidDispose(() => {
+            if (currentPanel === panel) currentPanel = undefined;
+        });
     });
-    const checkCodeCommand = vscode.commands.registerCommand('codekurs.checkCode', (lesson?: Lesson) => {
+    const findNextLesson = (current: Lesson): Lesson | undefined => {
+        if (!current.filePath) return undefined;
+        const dir = path.dirname(current.filePath);
+        const allItems = getAllItemsInDir(dir);
+        
+        const lessons = allItems.filter(item => typeof item !== 'string') as Lesson[];
+        const currentIndex = lessons.findIndex(l => l.filePath === current.filePath);
+        
+        if (currentIndex !== -1 && currentIndex < lessons.length - 1) {
+            return lessons[currentIndex + 1];
+        }
+        return undefined;
+    };
+
+    const checkCodeCommand = vscode.commands.registerCommand('codekurs.checkCode', async (lesson?: Lesson) => {
         if (!lesson) {
             vscode.window.showErrorMessage('Fehler: Keine Lektion zum Prüfen ausgewählt.');
             return;
@@ -157,15 +224,51 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         const text = editor.document.getText();
+        let isCorrect = false;
 
-        const cleanSolution = (lesson.solution || "").trim();
-        if (cleanSolution && text.includes(cleanSolution)) {
-            vscode.window.showInformationMessage('✅ Richtig! Gut gemacht! Du kannst mit der nächsten Lektion weitermachen.');
+        // 1. Regex-Prüfung
+        if (lesson.regexSolution) {
+            const regex = new RegExp(lesson.regexSolution, 's');
+            isCorrect = regex.test(text);
+        } 
+        // 2. String-Prüfung (einfach)
+        else {
+            const cleanSolution = (lesson.solution || "").trim();
+            isCorrect = !!cleanSolution && text.includes(cleanSolution);
+        }
+
+        // 3. Keywords-Prüfung (zusätzlich)
+        if (lesson.requiredKeywords && lesson.requiredKeywords.length > 0) {
+            const missing = lesson.requiredKeywords.filter(kw => !text.includes(kw));
+            if (missing.length > 0) {
+                vscode.window.showErrorMessage(`❌ Dir fehlen noch wichtige Bestandteile: ${missing.join(', ')}`);
+                return;
+            }
+        }
+
+        if (isCorrect) {
+            vscode.window.showInformationMessage('✅ Richtig! Gut gemacht! Springe zur nächsten Aufgabe...');
+            
+            // 1. Nächste Lektion suchen
+            const nextLesson = findNextLesson(lesson);
+
+            // 2. Aktuelle Tabs schließen
+            if (currentPanel) {
+                currentPanel.dispose();
+            }
+            await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+
+            // 3. Nächste Lektion öffnen (falls vorhanden)
+            if (nextLesson) {
+                vscode.commands.executeCommand('codekurs.openLesson', nextLesson);
+            } else {
+                vscode.window.showInformationMessage('Glückwunsch! Du hast alle Aufgaben in diesem Ordner abgeschlossen.');
+            }
         } else {
-            vscode.window.showErrorMessage('❌ Das ist noch nicht ganz richtig. Hast du den Code exakt so geschrieben wie in der Aufgabe?');
+            vscode.window.showErrorMessage('❌ Das ist noch nicht ganz richtig. Überprüfe deinen Code noch einmal.');
         }
     });
-    context.subscriptions.push(checkCodeCommand, refreshCoursesCommand, openLessonCommand, treeView);
+    context.subscriptions.push(createExerciseCommand, checkCodeCommand, refreshCoursesCommand, openLessonCommand, treeView);
 }
 
 class CourseTreeDataProvider implements vscode.TreeDataProvider<TreeItem> {
@@ -191,7 +294,13 @@ class CourseTreeDataProvider implements vscode.TreeDataProvider<TreeItem> {
                 title: 'Lektion öffnen',
                 arguments: [element]
             };
-            item.iconPath = new vscode.ThemeIcon('book');
+            
+            // Icons basierend auf Typ setzen
+            let iconName = 'book';
+            if (element.metadata.type === 'project') iconName = 'project';
+            if (element.metadata.type === 'challenge') iconName = 'star';
+            
+            item.iconPath = new vscode.ThemeIcon(iconName);
             return item;
         }
     }

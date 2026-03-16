@@ -57,8 +57,10 @@ function parseCourse(filePath) {
             const extraData = yaml.load(sections[3]);
             if (extraData) {
                 lesson.solution = extraData.solution;
-                lesson.template = extraData.template; // Lade das Template
+                lesson.template = extraData.template;
                 lesson.outputExpected = extraData.output_expected;
+                lesson.requiredKeywords = extraData.required_keywords;
+                lesson.regexSolution = extraData.regex_solution;
             }
         }
         return lesson;

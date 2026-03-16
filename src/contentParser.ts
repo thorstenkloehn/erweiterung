@@ -7,14 +7,17 @@ export interface CourseMetadata {
     title: string;
     description: string;
     order: number;
+    type?: 'lesson' | 'project' | 'challenge'; // Neu: Typ der Lektion
 }
 
 export interface Lesson {
     metadata: CourseMetadata;
     content: string;
     solution?: string;
-    template?: string; // Neu: Vorlage für Lückentext
+    template?: string; 
     outputExpected?: string;
+    requiredKeywords?: string[]; // Neu: Pflichtbegriffe
+    regexSolution?: string;    // Neu: Regex-basierte Prüfung
     filePath?: string;
 }
 
@@ -39,8 +42,10 @@ export function parseCourse(filePath: string): Lesson | null {
             const extraData = yaml.load(sections[3]) as any;
             if (extraData) {
                 lesson.solution = extraData.solution;
-                lesson.template = extraData.template; // Lade das Template
+                lesson.template = extraData.template;
                 lesson.outputExpected = extraData.output_expected;
+                lesson.requiredKeywords = extraData.required_keywords;
+                lesson.regexSolution = extraData.regex_solution;
             }
         }
 
