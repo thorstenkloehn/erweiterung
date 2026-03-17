@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getAllItemsInDir, Lesson } from './contentParser';
+import { getAllItemsInDir, Lesson, parseCourse } from './contentParser';
 
 type TreeItem = Lesson | string;
 
@@ -19,8 +19,19 @@ export function activate(context: vscode.ExtensionContext) {
     const treeDataProvider = new CourseTreeDataProvider(coursesPath);
     const treeView = vscode.window.createTreeView('codekurs-explorer', { treeDataProvider });
 
+    const startPythonCourseCommand = vscode.commands.registerCommand('codekurs.startPythonCourse', async () => {
+        const pythonIntroPath = path.join(coursesPath, 'Python', 'python-intro.md');
+        const lesson = parseCourse(pythonIntroPath);
+        if (lesson) {
+            vscode.commands.executeCommand('codekurs.openLesson', lesson);
+        } else {
+            vscode.window.showErrorMessage('Konnte Python-Einführung nicht finden.');
+        }
+    });
+
     let currentPanel: vscode.WebviewPanel | undefined;
     let currentDocUri: vscode.Uri | undefined;
+    let currentLesson: Lesson | undefined;
 
     const getExtensionForLanguage = (lang: string): string => {
         const map: Record<string, string> = {
@@ -123,11 +134,13 @@ solution: |
     });
 
     const getLanguage = (lesson: Lesson): string => {
-        const filePath = (lesson.filePath || "").toLowerCase();
-        if (filePath.includes('rust')) return 'rust';
+        const filePath = (lesson.filePath || "").toLowerCase().replace(/\\/g, '/');
+        if (filePath.includes('/rust/')) return 'rust';
+        if (filePath.includes('/cpp/')) return 'cpp';
         if (filePath.includes('/c/')) return 'c';
-        if (filePath.includes('csharp')) return 'csharp';
-        if (filePath.includes('javascript') || filePath.includes('/js-')) return 'javascript';
+        if (filePath.includes('/csharp/')) return 'csharp';
+        if (filePath.includes('/java/')) return 'java';
+        if (filePath.includes('/javascript/') || filePath.includes('/js-')) return 'javascript';
         return 'python'; // Standard
     };
 
@@ -139,8 +152,9 @@ solution: |
 
         await closeAllExerciseTabs();
 
+        currentLesson = lesson;
         const lang = getLanguage(lesson);
-        const commentChar = lang === 'rust' ? '//' : '#';
+        const commentChar = (lang === 'rust' || lang === 'c' || lang === 'cpp' || lang === 'java' || lang === 'csharp' || lang === 'javascript') ? '//' : '#';
         const ext = getExtensionForLanguage(lang);
         
         // Temporäre Scratch-Datei im Extension-Verzeichnis erstellen
@@ -328,9 +342,52 @@ solution: |
                         gap: 4px;
                         margin-top: 16px;
                     }
+
+                    /* Success Overlay */
+                    #success-overlay {
+                        display: none;
+                        position: fixed;
+                        top: 0; left: 0; right: 0; bottom: 0;
+                        background-color: var(--vscode-editor-background);
+                        z-index: 1000;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        text-align: center;
+                        padding: 24px;
+                    }
+                    #success-overlay img {
+                        max-width: 250px;
+                        height: auto;
+                        margin-bottom: 24px;
+                        border-radius: 8px;
+                    }
+                    #success-overlay h2 {
+                        margin-top: 0;
+                        color: var(--vscode-foreground);
+                    }
+                    #success-overlay p {
+                        margin-bottom: 24px;
+                        color: var(--vscode-descriptionForeground);
+                    }
+                    .overlay-buttons {
+                        display: flex;
+                        gap: 12px;
+                        flex-direction: column;
+                    }
                 </style>
             </head>
             <body>
+                <div id="success-overlay">
+                    <img src="${panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, 'media', 'success.svg')))}" alt="Success">
+                    <h2>Aufgabe gelöst!</h2>
+                    <p>Du hast diese Aufgabe erfolgreich abgeschlossen.</p>
+                    <div class="overlay-buttons">
+                        <button id="next-button" onclick="next()">Nächste Aufgabe</button>
+                        <button class="secondary" onclick="closeOverlay()">Zurück zum Code</button>
+                    </div>
+                </div>
+
                 <div class="header">
                     <div class="type-label">${lesson.metadata.type === 'project' ? 'Project' : 'Task'}</div>
                     <div class="steps">
@@ -370,6 +427,9 @@ solution: |
                     function check() {
                         vscode.postMessage({ command: 'check' });
                     }
+                    function next() {
+                        vscode.postMessage({ command: 'next' });
+                    }
                     function toggleSolution() {
                         const box = document.getElementById('solution-box');
                         if (box.style.display === 'none' || box.style.display === '') {
@@ -378,6 +438,19 @@ solution: |
                             box.style.display = 'none';
                         }
                     }
+                    function closeOverlay() {
+                        document.getElementById('success-overlay').style.display = 'none';
+                    }
+
+                    window.addEventListener('message', event => {
+                        const message = event.data;
+                        if (message.command === 'showSuccess') {
+                            document.getElementById('success-overlay').style.display = 'flex';
+                            if (!message.hasNext) {
+                                document.getElementById('next-button').style.display = 'none';
+                            }
+                        }
+                    });
                 </script>
             </body>
             </html>
@@ -386,6 +459,14 @@ solution: |
         panel.webview.onDidReceiveMessage(message => {
             if (message.command === 'check') {
                 vscode.commands.executeCommand('codekurs.checkCode', lesson);
+            } else if (message.command === 'next') {
+                // Finde die nächste Lektion relativ zur AKTUELLEN Lektion
+                const nextLesson = findNextLesson(lesson);
+                if (nextLesson) {
+                    vscode.commands.executeCommand('codekurs.openLesson', nextLesson);
+                } else {
+                    vscode.window.showInformationMessage('Keine weiteren Aufgaben in diesem Kurs.');
+                }
             }
         });
 
@@ -408,12 +489,13 @@ solution: |
     };
 
     const checkCodeCommand = vscode.commands.registerCommand('codekurs.checkCode', async (lesson?: Lesson) => {
-        if (!lesson) {
+        const targetLesson = lesson || currentLesson;
+        if (!targetLesson) {
             vscode.window.showErrorMessage('Fehler: Keine Lektion zum Prüfen ausgewählt.');
             return;
         }
 
-        const lang = getLanguage(lesson);
+        const lang = getLanguage(targetLesson);
         let editor = vscode.window.activeTextEditor;
 
         if (!editor || editor.document.languageId !== lang) {
@@ -429,19 +511,19 @@ solution: |
         let isCorrect = false;
 
         // 1. Regex-Prüfung
-        if (lesson.regexSolution) {
-            const regex = new RegExp(lesson.regexSolution, 's');
+        if (targetLesson.regexSolution) {
+            const regex = new RegExp(targetLesson.regexSolution, 's');
             isCorrect = regex.test(text);
         } 
         // 2. String-Prüfung (einfach)
         else {
-            const cleanSolution = (lesson.solution || "").trim();
+            const cleanSolution = (targetLesson.solution || "").trim();
             isCorrect = !!cleanSolution && text.includes(cleanSolution);
         }
 
         // 3. Keywords-Prüfung (zusätzlich)
-        if (lesson.requiredKeywords && lesson.requiredKeywords.length > 0) {
-            const missing = lesson.requiredKeywords.filter(kw => !text.includes(kw));
+        if (targetLesson.requiredKeywords && targetLesson.requiredKeywords.length > 0) {
+            const missing = targetLesson.requiredKeywords.filter(kw => !text.includes(kw));
             if (missing.length > 0) {
                 vscode.window.showErrorMessage(`❌ Dir fehlen noch wichtige Bestandteile: ${missing.join(', ')}`);
                 return;
@@ -449,25 +531,58 @@ solution: |
         }
 
         if (isCorrect) {
-            vscode.window.showInformationMessage('✅ Richtig! Gut gemacht! Springe zur nächsten Aufgabe...');
+            const nextLesson = findNextLesson(targetLesson);
             
-            // 1. Nächste Lektion suchen
-            const nextLesson = findNextLesson(lesson);
-
-            // 2. Alle Übungsfenster schließen
-            await closeAllExerciseTabs();
-
-            // 3. Nächste Lektion öffnen (falls vorhanden)
-            if (nextLesson) {
-                vscode.commands.executeCommand('codekurs.openLesson', nextLesson);
-            } else {
-                vscode.window.showInformationMessage('Glückwunsch! Du hast alle Aufgaben in diesem Ordner abgeschlossen.');
+            // Zeige Erfolg im Webview an, falls offen
+            if (currentPanel) {
+                currentPanel.webview.postMessage({ 
+                    command: 'showSuccess', 
+                    hasNext: !!nextLesson 
+                });
             }
+
+            vscode.window.showInformationMessage('✅ Richtig! Gut gemacht!');
+            
+            // Wir springen nicht mehr automatisch, sondern lassen den Nutzer im Webview auf "Nächste" klicken
+            // oder über die Sidebar navigieren.
         } else {
             vscode.window.showErrorMessage('❌ Das ist noch nicht ganz richtig. Überprüfe deinen Code noch einmal.');
         }
     });
-    context.subscriptions.push(createExerciseCommand, checkCodeCommand, refreshCoursesCommand, openLessonCommand, treeView);
+    const startTreeView = vscode.window.createTreeView('codekurs-start', { 
+        treeDataProvider: new StartTreeDataProvider() 
+    });
+
+    context.subscriptions.push(createExerciseCommand, checkCodeCommand, refreshCoursesCommand, openLessonCommand, startPythonCourseCommand, treeView, startTreeView);
+}
+
+class StartTreeDataProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+    getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
+        return element;
+    }
+
+    getChildren(element?: vscode.TreeItem): Thenable<vscode.TreeItem[]> {
+        if (element) return Promise.resolve([]);
+
+        const startItem = new vscode.TreeItem('🚀 Erste Schritte', vscode.TreeItemCollapsibleState.None);
+        startItem.description = 'Walkthrough öffnen';
+        startItem.command = {
+            command: 'workbench.action.openWalkthrough',
+            title: 'Walkthrough öffnen',
+            arguments: [{ category: 'lernerweiterung.welcome' }]
+        };
+        startItem.iconPath = new vscode.ThemeIcon('play');
+
+        const helpItem = new vscode.TreeItem('❓ Hilfe & Dokumentation', vscode.TreeItemCollapsibleState.None);
+        helpItem.command = {
+            command: 'vscode.open',
+            title: 'URL öffnen',
+            arguments: [vscode.Uri.parse('https://example.com')]
+        };
+        helpItem.iconPath = new vscode.ThemeIcon('question');
+
+        return Promise.resolve([startItem, helpItem]);
+    }
 }
 
 class CourseTreeDataProvider implements vscode.TreeDataProvider<TreeItem> {

@@ -5,7 +5,7 @@ int main() {
     printf("Gib dein Alter ein: ");
 
     // Lese hier das Alter ein:
-    _________________________________;
+    scanf("%d", &alter);
 
     printf("Du bist %d Jahre alt.\n", alter);
     return 0;

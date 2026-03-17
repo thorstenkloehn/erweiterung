@@ -73,9 +73,12 @@ export function getAllItemsInDir(dirPath: string): (Lesson | string)[] {
         }
         
         return items.sort((a, b) => {
-            const titleA = typeof a === 'string' ? a : a.metadata.order.toString();
-            const titleB = typeof b === 'string' ? b : b.metadata.order.toString();
-            return titleA.localeCompare(titleB);
+            if (typeof a === 'string' && typeof b === 'string') {
+                return a.localeCompare(b);
+            }
+            const orderA = typeof a === 'string' ? 0 : Number(a.metadata.order);
+            const orderB = typeof b === 'string' ? 0 : Number(b.metadata.order);
+            return orderA - orderB;
         });
     } catch (error) {
         return [];

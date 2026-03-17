@@ -10,7 +10,8 @@
     "Education"
   ],
   "activationEvents": [
-    "onView:codekurs-explorer"
+    "onView:codekurs-explorer",
+    "onView:codekurs-start"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -27,6 +28,10 @@
         {
           "id": "codekurs-explorer",
           "name": "Kurs-Explorer"
+        },
+        {
+          "id": "codekurs-start",
+          "name": "Einstieg"
         }
       ]
     },
@@ -49,6 +54,54 @@
       {
         "command": "codekurs.openLesson",
         "title": "Lektion lesen"
+      },
+      {
+        "command": "codekurs.startPythonCourse",
+        "title": "Python-Kurs starten"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "lernerweiterung.welcome",
+        "title": "Willkommen zur Lernerweiterung",
+        "description": "Lerne Schritt für Schritt, wie du diese Erweiterung nutzt, um Programmieren zu lernen.",
+        "steps": [
+          {
+            "id": "lernerweiterung.step.intro",
+            "title": "Willkommen!",
+            "description": "Diese Erweiterung hilft dir dabei, Programmiersprachen wie Python, Java, C und viele mehr direkt in VS Code zu erlernen.\n[Lernerweiterung Webseite](https://example.com)",
+            "media": {
+              "image": "media/welcome.svg",
+              "altText": "Willkommen Bild"
+            }
+          },
+          {
+            "id": "lernerweiterung.step.explorer",
+            "title": "Kurs-Explorer öffnen",
+            "description": "Klicke auf das Buch-Icon in der Seitenleiste, um alle verfügbaren Kurse zu sehen.",
+            "media": {
+              "image": "media/explorer.svg",
+              "altText": "Explorer Bild"
+            },
+            "button": {
+              "command": "codekurs-explorer.focus",
+              "label": "Explorer öffnen"
+            }
+          },
+          {
+            "id": "lernerweiterung.step.firstLesson",
+            "title": "Deine erste Lektion",
+            "description": "Starte mit der Python-Einführung und schreibe dein erstes Programm.",
+            "media": {
+              "image": "media/python.svg",
+              "altText": "Python Bild"
+            },
+            "button": {
+              "command": "codekurs.startPythonCourse",
+              "label": "Kurs starten"
+            }
+          }
+        ]
       }
     ],
     "menus": {
@@ -56,7 +109,7 @@
         {
           "command": "codekurs.checkCode",
           "group": "navigation",
-          "when": "resourceExtname == .py"
+          "when": "resourceExtname =~ /\\.(py|js|ts|rs|c|cpp|cs|java)$/"
         }
       ],
       "view/title": [
