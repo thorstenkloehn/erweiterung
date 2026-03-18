@@ -11,10 +11,21 @@ export function activate(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel('Lernerweiterung');
     outputChannel.appendLine('Aktiviere Lernerweiterung...');
 
-    let coursesPath = path.join(context.extensionPath, 'lernen');
+    let coursesPath = path.join(__dirname, '..', 'lernen');
     if (!fs.existsSync(coursesPath)) {
-        coursesPath = path.join(__dirname, '..', 'lernen');
+        coursesPath = path.join(context.extensionPath, 'lernen');
     }
+
+    outputChannel.appendLine(`extensionPath: ${context.extensionPath}`);
+    outputChannel.appendLine(`__dirname: ${__dirname}`);
+    outputChannel.appendLine(`coursesPath: ${coursesPath}`);
+    outputChannel.appendLine(`exists: ${fs.existsSync(coursesPath)}`);
+    try {
+        outputChannel.appendLine(`parent dir: ${fs.readdirSync(path.join(__dirname, '..')).join(', ')}`);
+    } catch(e) {
+        outputChannel.appendLine(`parent dir error: ${e}`);
+    }
+    outputChannel.show();
 
     const treeDataProvider = new CourseTreeDataProvider(coursesPath);
     const treeView = vscode.window.createTreeView('codekurs-explorer', { treeDataProvider });
@@ -445,49 +456,56 @@ solution: |
                     window.addEventListener('message', event => {
                         const message = event.data;
                         if (message.command === 'showSuccess') {
-                            document.getElementById('success-overlay').style.display = 'flex';
-                            if (!message.hasNext) {
-                                document.getElementById('next-button').style.display = 'none';
+                            const overlay = document.getElementById('success-overlay');
+                            const nextBtn = document.getElementById('next-button');
+
+                            overlay.style.display = 'flex';
+                            if (nextBtn) {
+                                nextBtn.style.display = message.hasNext ? 'inline-block' : 'none';
                             }
                         }
                     });
-                </script>
-            </body>
-            </html>
-        `;
+                    </script>
+                    </body>
+                    </html>
+                    `;
 
-        panel.webview.onDidReceiveMessage(message => {
-            if (message.command === 'check') {
-                vscode.commands.executeCommand('codekurs.checkCode', lesson);
-            } else if (message.command === 'next') {
-                // Finde die nächste Lektion relativ zur AKTUELLEN Lektion
-                const nextLesson = findNextLesson(lesson);
-                if (nextLesson) {
+                    panel.webview.onDidReceiveMessage(message => {
+                    if (message.command === 'check') {
+                    vscode.commands.executeCommand('codekurs.checkCode', lesson);
+                    } else if (message.command === 'next') {
+                    outputChannel.appendLine(`[next] Klick auf Nächste Aufgabe für: ${lesson.metadata.title}`);
+                    const nextLesson = findNextLesson(lesson);
+
+                    if (nextLesson) {
+                    outputChannel.appendLine(`[next] Öffne nächste Lektion: ${nextLesson.metadata.title} (${nextLesson.filePath})`);
                     vscode.commands.executeCommand('codekurs.openLesson', nextLesson);
-                } else {
+                    } else {
+                    outputChannel.appendLine(`[next] Keine weitere Lektion gefunden.`);
                     vscode.window.showInformationMessage('Keine weiteren Aufgaben in diesem Kurs.');
-                }
-            }
-        });
+                    }
+                    }
+                    });
 
-        panel.onDidDispose(() => {
-            if (currentPanel === panel) currentPanel = undefined;
-        });
-    });
-    const findNextLesson = (current: Lesson): Lesson | undefined => {
-        if (!current.filePath) return undefined;
-        const dir = path.dirname(current.filePath);
-        const allItems = getAllItemsInDir(dir);
-        
-        const lessons = allItems.filter(item => typeof item !== 'string') as Lesson[];
-        const currentIndex = lessons.findIndex(l => l.filePath === current.filePath);
-        
-        if (currentIndex !== -1 && currentIndex < lessons.length - 1) {
-            return lessons[currentIndex + 1];
-        }
-        return undefined;
-    };
+                    panel.onDidDispose(() => {
+                    if (currentPanel === panel) currentPanel = undefined;
+                    });
+                    });
 
+                    const findNextLesson = (current: Lesson): Lesson | undefined => {
+                    if (!current.filePath) return undefined;
+                    const currentPath = path.resolve(current.filePath);
+                    const dir = path.dirname(currentPath);
+                    const allItems = getAllItemsInDir(dir);
+
+                    const lessons = allItems.filter(item => typeof item !== 'string') as Lesson[];
+                    const currentIndex = lessons.findIndex(l => l.filePath && path.resolve(l.filePath) === currentPath);
+
+                    if (currentIndex !== -1 && currentIndex < lessons.length - 1) {
+                    return lessons[currentIndex + 1];
+                    }
+                    return undefined;
+                    };
     const checkCodeCommand = vscode.commands.registerCommand('codekurs.checkCode', async (lesson?: Lesson) => {
         const targetLesson = lesson || currentLesson;
         if (!targetLesson) {
@@ -532,19 +550,11 @@ solution: |
 
         if (isCorrect) {
             const nextLesson = findNextLesson(targetLesson);
-            
-            // Zeige Erfolg im Webview an, falls offen
             if (currentPanel) {
-                currentPanel.webview.postMessage({ 
-                    command: 'showSuccess', 
-                    hasNext: !!nextLesson 
-                });
+                currentPanel.webview.postMessage({ command: 'showSuccess', hasNext: !!nextLesson });
+            } else {
+                vscode.window.showInformationMessage(nextLesson ? '✅ Richtig! Gut gemacht!' : '🎉 Kurs abgeschlossen!');
             }
-
-            vscode.window.showInformationMessage('✅ Richtig! Gut gemacht!');
-            
-            // Wir springen nicht mehr automatisch, sondern lassen den Nutzer im Webview auf "Nächste" klicken
-            // oder über die Sidebar navigieren.
         } else {
             vscode.window.showErrorMessage('❌ Das ist noch nicht ganz richtig. Überprüfe deinen Code noch einmal.');
         }
@@ -628,9 +638,12 @@ class CourseTreeDataProvider implements vscode.TreeDataProvider<TreeItem> {
         }
 
         try {
+            console.log('[Lernerweiterung] getChildren path:', currentPath);
             const items = getAllItemsInDir(currentPath);
+            console.log('[Lernerweiterung] items found:', items.length);
             return Promise.resolve(items);
         } catch (error) {
+            console.error('[Lernerweiterung] getChildren error:', error);
             return Promise.resolve([]);
         }
     }

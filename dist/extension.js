@@ -43,10 +43,21 @@ function activate(context) {
     console.log('Lernerweiterung ist aktiv.');
     const outputChannel = vscode.window.createOutputChannel('Lernerweiterung');
     outputChannel.appendLine('Aktiviere Lernerweiterung...');
-    let coursesPath = path.join(context.extensionPath, 'lernen');
+    let coursesPath = path.join(__dirname, '..', 'lernen');
     if (!fs.existsSync(coursesPath)) {
-        coursesPath = path.join(__dirname, '..', 'lernen');
+        coursesPath = path.join(context.extensionPath, 'lernen');
     }
+    outputChannel.appendLine(`extensionPath: ${context.extensionPath}`);
+    outputChannel.appendLine(`__dirname: ${__dirname}`);
+    outputChannel.appendLine(`coursesPath: ${coursesPath}`);
+    outputChannel.appendLine(`exists: ${fs.existsSync(coursesPath)}`);
+    try {
+        outputChannel.appendLine(`parent dir: ${fs.readdirSync(path.join(__dirname, '..')).join(', ')}`);
+    }
+    catch (e) {
+        outputChannel.appendLine(`parent dir error: ${e}`);
+    }
+    outputChannel.show();
     const treeDataProvider = new CourseTreeDataProvider(coursesPath);
     const treeView = vscode.window.createTreeView('codekurs-explorer', { treeDataProvider });
     const startPythonCourseCommand = vscode.commands.registerCommand('codekurs.startPythonCourse', async () => {
@@ -466,8 +477,9 @@ solution: |
                 vscode.commands.executeCommand('codekurs.checkCode', lesson);
             }
             else if (message.command === 'next') {
-                // Finde die nächste Lektion relativ zur AKTUELLEN Lektion
+                outputChannel.appendLine(`[next] lesson.filePath = ${lesson.filePath}`);
                 const nextLesson = findNextLesson(lesson);
+                outputChannel.appendLine(`[next] nextLesson = ${nextLesson?.filePath ?? 'undefined'}`);
                 if (nextLesson) {
                     vscode.commands.executeCommand('codekurs.openLesson', nextLesson);
                 }
@@ -530,16 +542,12 @@ solution: |
         }
         if (isCorrect) {
             const nextLesson = findNextLesson(targetLesson);
-            // Zeige Erfolg im Webview an, falls offen
             if (currentPanel) {
-                currentPanel.webview.postMessage({
-                    command: 'showSuccess',
-                    hasNext: !!nextLesson
-                });
+                currentPanel.webview.postMessage({ command: 'showSuccess', hasNext: !!nextLesson });
             }
-            vscode.window.showInformationMessage('✅ Richtig! Gut gemacht!');
-            // Wir springen nicht mehr automatisch, sondern lassen den Nutzer im Webview auf "Nächste" klicken
-            // oder über die Sidebar navigieren.
+            else {
+                vscode.window.showInformationMessage(nextLesson ? '✅ Richtig! Gut gemacht!' : '🎉 Kurs abgeschlossen!');
+            }
         }
         else {
             vscode.window.showErrorMessage('❌ Das ist noch nicht ganz richtig. Überprüfe deinen Code noch einmal.');
@@ -617,10 +625,13 @@ class CourseTreeDataProvider {
             return Promise.resolve([]);
         }
         try {
+            console.log('[Lernerweiterung] getChildren path:', currentPath);
             const items = (0, contentParser_1.getAllItemsInDir)(currentPath);
+            console.log('[Lernerweiterung] items found:', items.length);
             return Promise.resolve(items);
         }
         catch (error) {
+            console.error('[Lernerweiterung] getChildren error:', error);
             return Promise.resolve([]);
         }
     }

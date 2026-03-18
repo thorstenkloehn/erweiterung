@@ -73,12 +73,27 @@ export function getAllItemsInDir(dirPath: string): (Lesson | string)[] {
         }
         
         return items.sort((a, b) => {
+            // Verzeichnisse (Strings) immer nach oben
+            if (typeof a === 'string' && typeof b !== 'string') return -1;
+            if (typeof a !== 'string' && typeof b === 'string') return 1;
+            
             if (typeof a === 'string' && typeof b === 'string') {
                 return a.localeCompare(b);
             }
-            const orderA = typeof a === 'string' ? 0 : Number(a.metadata.order);
-            const orderB = typeof b === 'string' ? 0 : Number(b.metadata.order);
-            return orderA - orderB;
+            
+            // Beide sind Lessons
+            const lessonA = a as Lesson;
+            const lessonB = b as Lesson;
+            
+            const orderA = lessonA.metadata.order !== undefined ? Number(lessonA.metadata.order) : 999;
+            const orderB = lessonB.metadata.order !== undefined ? Number(lessonB.metadata.order) : 999;
+            
+            if (orderA !== orderB) {
+                return orderA - orderB;
+            }
+            
+            // Fallback auf Titel bei gleicher Order
+            return (lessonA.metadata.title || "").localeCompare(lessonB.metadata.title || "");
         });
     } catch (error) {
         return [];
